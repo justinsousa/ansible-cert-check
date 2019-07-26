@@ -1,0 +1,8 @@
+# editorconfig.org
+
+# This is the project's root directory
+root = true
+
+[{Makefile,**.mk}]
+# Use tabs for indentation (Makefiles require tabs)
+indent_style = tab

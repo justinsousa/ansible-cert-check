@@ -1,0 +1,11 @@
+# Jetbrains
+.idea/
+
+*.pyc
+venvs/
+
+# ansible
+*.retry
+
+cert-status*.html
+

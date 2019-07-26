@@ -1,0 +1,119 @@
+#!/usr/bin/env python
+
+import argparse
+import datetime
+import logging
+import socket
+import ssl
+import sys
+
+if sys.version_info.major > 2:
+    from urllib.parse import urlparse
+else:
+    from urlparse import urlparse
+
+
+__VERSION__ = "1.0"
+__description__ = """
+A script for checking days to expiration of TLS cert. It will print to stdout the number of days
+until the cert expires. It will return a non-zero return code if the cert is expiring with a certain
+number of buffer days (default is 30).
+"""
+
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+
+stdout_handler = logging.StreamHandler(sys.stdout)
+stdout_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(message)s')
+
+stdout_handler.setFormatter(formatter)
+logger.addHandler(stdout_handler)
+
+
+def ssl_expiry_datetime(hostname):
+    """
+    convert expiration date of the TLS cert for `hostname` to a python datetime object
+    :return: datetime.datetime
+    """
+    ssl_date_fmt = r'%b %d %H:%M:%S %Y %Z'
+    context = ssl.create_default_context()
+    conn = context.wrap_socket(socket.socket(socket.AF_INET), server_hostname=hostname)
+    # allow for 3 second timeout
+    conn.settimeout(3.0)
+    conn.connect((hostname, 443))
+    ssl_info = conn.getpeercert()
+    # parse the string from the certificate into a Python datetime object
+    return datetime.datetime.strptime(ssl_info['notAfter'], ssl_date_fmt)
+
+
+def ssl_valid_time_remaining(hostname, verbose):
+    """Get the number of days left in a cert's lifetime."""
+    expires = ssl_expiry_datetime(hostname)
+    if verbose:
+        logger.info("SSL cert for %s expires at %s" % (hostname, expires.isoformat()))
+    return expires - datetime.datetime.utcnow()
+
+
+def ssl_expires_in(hostname, buffer_days, verbose):
+    """
+    Check if `hostname` TLS cert expires is within `buffer_days`.
+
+    Raises an Exception if the cert is past due
+    """
+    remaining = ssl_valid_time_remaining(hostname, verbose)
+    if verbose:
+        logger.info("There are %s days remaining for the certificate of %s" % (remaining.days, hostname))
+
+    # if the cert expires in less than two weeks, we should reissue it
+    if remaining < datetime.timedelta(days=0):
+        # cert has already expired
+        raise Exception("Cert expired %s days ago" % remaining.days)
+    elif remaining < datetime.timedelta(days=buffer_days):
+        # expires sooner than the buffer
+        return True, remaining.days
+    else:
+        # everything is fine
+        return False, remaining.days
+
+def _url_was_passed(value):
+    return True if urlparse(value).scheme else False
+
+def _normalize_hostname_from_url(value):
+    if _url_was_passed(value):
+        return urlparse(value).netloc
+    else:
+        return value
+
+def main():
+    parser = argparse.ArgumentParser(usage='%(prog)s hostname.example.com [options]', description=__description__, add_help=True)
+    parser.add_argument('hostname', help='the hostname to check the expiration of')
+    parser.add_argument('-d', '--days', action='store', dest='buffer_days', type=int, default=30, help="number of days to warn on, default=30")
+    parser.add_argument('-v', '--verbose', action='store_true', dest='verbose', help="if set, program will output additional info text")
+    parsed_args = parser.parse_args()
+
+    hostname = parsed_args.hostname
+    buffer_days = parsed_args.buffer_days
+    verbose = parsed_args.verbose
+
+    hostname = _normalize_hostname_from_url(hostname)
+
+    check_result = ssl_expires_in(hostname, buffer_days, verbose)
+    cert_is_expiring = check_result[0]
+    cert_days_left = check_result[1]
+
+    if cert_is_expiring:
+        if verbose:
+            logger.info("WARNING: Cert Expires in less than %s days" % buffer_days)
+    else:
+        if verbose:
+            logger.info("Certificate will NOT expire within %s days" % buffer_days)
+        
+    logger.info(cert_days_left)
+
+    if cert_is_expiring:
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

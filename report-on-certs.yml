@@ -1,0 +1,35 @@
+---
+- hosts: "{{ target_hosts | default('localhost') }}"
+  gather_facts: True
+  name: check certificate expiration of a list of hostnames
+  vars:
+    hostnames_to_check:
+      - jsousa.me
+      - github.com
+      - google.com
+      - amazon.com
+      - facebook.com
+    cert_expiration_buffer_days: 60
+  tasks:
+    - name: check certificate expiration
+      ignore_errors: yes
+      delegate_to: localhost
+      command: ./check-cert-expiration {{ item }} -d {{ cert_expiration_buffer_days }}
+      loop: "{{ hostnames_to_check }}"
+      register: cert_expiration_check
+      failed_when: cert_expiration_check.rc not in [0,1]
+
+    - name: show the results
+      debug: var=cert_expiration_check.results
+
+    - name: render the results
+      delegate_to: localhost
+      template:
+        src: "cert-checker-results.html.j2"
+        dest: "./cert-status-{{ ansible_date_time.date }}.html"
+
+    - name: place warning file if ANY cert check command failed failed
+      delegate_to: localhost
+      when: "cert_expiration_check.results | selectattr('rc','greaterthan', 0) | list | length > 0"
+      fail:
+        msg: "A certificate check has failed"

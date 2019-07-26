@@ -1,0 +1,65 @@
+<head>
+<style>
+table.YumTable {
+  width: 600px;
+  background-color: #fffbfc;
+  border-collapse: collapse;
+  border-width: 2px;
+  border-color: black;
+  border-style: solid;
+  color: black;
+}
+
+table.YumTable th {
+    background-color: lightgray;
+    text-align: center;
+}
+
+table.YumTable td, table.YumTable th {
+  border-width: 2px;
+  border-color: black;
+  border-style: solid;
+  padding: 3px;
+  text-align: center;
+}
+
+table.YumTable thead {
+  background-color: white;
+}
+
+.cert-good {
+  color: green;
+  font-weight: bold;
+}
+.cert-warn {
+  color: red;
+  font-weight: bold;
+}
+
+</style>
+</head>
+<body>
+<h3>TLS Cert Status Ran On {{ ansible_date_time.weekday }}  {{ ansible_date_time.iso8601 }}</h3>
+<table class="YumTable">
+  <thead>
+    <tr>
+      <th>Site</th>
+      <th>Days Until Expiration</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for cert in cert_expiration_check.results | sort(attribute='stdout', reverse=True) %}
+    <tr>
+      <td>{{ cert.item }}</td>
+      {% if cert.stdout | int < 60 %}
+    <td><div class="cert-warn">{% if cert.stdout | int %} {{ cert.stdout}} {% else %}ERROR{% endif %}</div></td>
+      {% else %}
+    <td><div class="cert-good">{{ cert.stdout }}</div></td>
+  {% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</body>
+
+<footer>Brought to you by Ansible</footer>
